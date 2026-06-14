@@ -1,33 +1,21 @@
- ─ yaml
-      name: Daily PM/PO Leads
+─ yaml
+      name: Daily PM/PO Leads (Hermes webhook) [DISABLED]
       on:
-        schedule:
-          - cron: '0 13 * * *'
         workflow_dispatch: {}
-      permissions:
-        contents: write
       jobs:
-        sweep:
+        trigger-hermes:
           runs-on: ubuntu-latest
-          timeout-minutes: 10
           steps:
-            - uses: actions/checkout@v4
-            - uses: actions/setup-python@v5
-              with:
-                python-version: '3.11'
-            - run: pip install requests
-            - name: Run sweep + email
+            - name: POST to Hermes webhook
               env:
-                OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-                GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-                GMAIL_SENDER: 'pawan.bapm@gmail.com'
-                GMAIL_RECIPIENT: 'pawan.bapm@gmail.com'
-                OPENROUTER_MODEL: 'openai/gpt-4o:online'
-              run: python scripts/sweep.py
-            - name: Commit leads archive
+                HERMES_WEBHOOK_URL: ${{ secrets.HERMES_WEBHOOK_URL }}
+                HERMES_WEBHOOK_SECRET: ${{ secrets.HERMES_WEBHOOK_SECRET }}
               run: |
-                git config user.name "github-actions[bot]"
-                git config user.email "github-actions[bot]@users.noreply.github.com"
-                git add leads/ || true
-                git diff --staged --quiet || git commit -m "chore: daily leads archive $(date -u +%Y-%m-%d)" || true
-                git push || echo "nothing to commit"
+                if [ -z "$HERMES_WEBHOOK_URL" ]; then
+                  echo "::error::HERMES_WEBHOOK_URL secret not set."
+                  exit 1
+                fi
+                SIG=$(printf '' | openssl dgst -sha256 -hmac "$HERMES_WEBHOOK_SECRET" -hex | awk '{print $2}')
+                curl -fsS -X POST "$HERMES_WEBHOOK_URL" -H "Content-Type: application/json" -H "X-Hub-Signature-256: sha256=$SIG" -d
+      '{"source":"github-actions","trigger":"daily-pmpo-leads","date":"'$(date -u +%Y-%m-%d)'"}' && echo "hermes webhook fired" ||
+      (echo "::error::Hermes webhook failed"; exit 1)
