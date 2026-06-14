@@ -1,1 +1,33 @@
-
+ ─ yaml
+      name: Daily PM/PO Leads
+      on:
+        schedule:
+          - cron: '0 13 * * *'
+        workflow_dispatch: {}
+      permissions:
+        contents: write
+      jobs:
+        sweep:
+          runs-on: ubuntu-latest
+          timeout-minutes: 10
+          steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v5
+              with:
+                python-version: '3.11'
+            - run: pip install requests
+            - name: Run sweep + email
+              env:
+                OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+                GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+                GMAIL_SENDER: 'pawan.bapm@gmail.com'
+                GMAIL_RECIPIENT: 'pawan.bapm@gmail.com'
+                OPENROUTER_MODEL: 'openai/gpt-4o:online'
+              run: python scripts/sweep.py
+            - name: Commit leads archive
+              run: |
+                git config user.name "github-actions[bot]"
+                git config user.email "github-actions[bot]@users.noreply.github.com"
+                git add leads/ || true
+                git diff --staged --quiet || git commit -m "chore: daily leads archive $(date -u +%Y-%m-%d)" || true
+                git push || echo "nothing to commit"
